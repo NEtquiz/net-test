@@ -1,0 +1,123 @@
+// Function to handle quiz creation form submission
+function createQuiz(event) {
+    if (event) {
+        event.preventDefault();
+    }
+    
+    // Get quiz title
+    const quizTitle = document.getElementById('quiz-title').value;
+    if (!quizTitle) {
+        alert("Please enter a quiz title");
+        return;
+    }
+    
+    // Gather all question elements
+    const questionElements = document.querySelectorAll('.question-item');
+    if (questionElements.length === 0) {
+        alert("Please add at least one question");
+        return;
+    }
+    
+    // Create questions array
+    const questions = [];
+    
+    // Process each question
+    questionElements.forEach((questionElement, index) => {
+        // Get question text
+        const questionText = questionElement.querySelector('.question-text').value;
+        if (!questionText) {
+            alert(`Question ${index + 1} is missing text`);
+            return;
+        }
+        
+        // Get answer options
+        const answerOptions = [];
+        const optionElements = questionElement.querySelectorAll('.answer-option');
+        
+        optionElements.forEach((optionElement, optionIndex) => {
+            const optionText = optionElement.querySelector('input[type="text"]').value;
+            const isCorrect = optionElement.querySelector('input[type="checkbox"]').checked;
+            
+            if (optionText) {
+                answerOptions.push({
+                    text: optionText,
+                    correct: isCorrect
+                });
+            }
+        });
+        
+        // Validate we have at least one correct answer
+        const hasCorrectAnswer = answerOptions.some(option => option.correct);
+        if (!hasCorrectAnswer) {
+            alert(`Question ${index + 1} doesn't have a correct answer marked`);
+            return;
+        }
+        
+        // Create question object
+        const questionObj = {
+            text: questionText,
+            options: answerOptions
+        };
+        
+        // Add question image if available
+        const imagePreview = questionElement.querySelector('.question-image-preview');
+        if (imagePreview && imagePreview.src && 
+            imagePreview.style.display !== 'none' && 
+            !imagePreview.src.endsWith('placeholder.png')) {
+            console.log(`Adding image for question ${index + 1}`);
+            questionObj.image = imagePreview.src;
+        }
+        
+        // Add to questions array
+        questions.push(questionObj);
+    });
+    
+    // Get quiz description
+    const quizDescription = document.getElementById('quiz-description').value || 'No description';
+    
+    // Set category to My Quizzes only
+    const category = "My Quizzes";
+    
+    // Get time limit
+    const timeLimit = parseInt(document.getElementById('time-limit').value) || 60;
+    
+    // Get visibility
+    const isPublic = document.getElementById('quiz-visibility').checked;
+    
+    // Create quiz object
+    const quiz = {
+        id: Date.now().toString(),
+        title: quizTitle,
+        description: quizDescription,
+        category: category,
+        timeLimit: timeLimit,
+        public: isPublic,
+        questions: questions,
+        createdAt: new Date().toISOString(),
+        createdBy: getCurrentUser() || 'anonymous'
+    };
+    
+    // Use offline-aware storage method
+    const userQuizzes = JSON.parse(localStorage.getItem('userQuizzes')) || [];
+    userQuizzes.push(quiz);
+    
+    // Use the enhanced storage method that supports offline sync
+    saveToLocalStorageWithSync('userQuizzes', userQuizzes);
+    
+    // Show appropriate message based on connection status
+    if (navigator.onLine) {
+        alert('Quiz created successfully!');
+    } else {
+        alert('Quiz saved locally. It will sync when you are back online.');
+    }
+    
+    // Update user stats
+    updateUserStats('quizzesCreated');
+    
+    // Reset form
+    document.getElementById('create-quiz-form').reset();
+    
+    // Go back to categories screen and show the new quiz
+    showScreen('categories-screen');
+    updateCategoriesWithUserQuizzes();
+} 

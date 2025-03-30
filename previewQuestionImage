@@ -1,0 +1,53 @@
+// Function to preview question image
+function previewQuestionImage(input, questionIndex) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            // Get the question element
+            const questionElement = document.querySelectorAll('.question-item')[questionIndex];
+            
+            // Find the image preview element
+            const preview = questionElement.querySelector('.question-image-preview');
+            const removeBtn = questionElement.querySelector('.remove-image-btn');
+            
+            if (preview && removeBtn) {
+                // Set the image source and make it visible
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+                removeBtn.style.display = 'inline-block';
+                
+                console.log(`Image preview set for question ${questionIndex + 1}`);
+            } else {
+                console.error('Could not find preview elements');
+            }
+        };
+        
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+// Function to remove a question image
+function removeQuestionImage(questionIndex) {
+    // Get the question element
+    const questionElement = document.querySelectorAll('.question-item')[questionIndex];
+    
+    // Find the image preview element
+    const preview = questionElement.querySelector('.question-image-preview');
+    const removeBtn = questionElement.querySelector('.remove-image-btn');
+    
+    if (preview && removeBtn) {
+        // Clear and hide the image
+        preview.src = '';
+        preview.style.display = 'none';
+        removeBtn.style.display = 'none';
+        
+        // Also clear the file input
+        const fileInput = questionElement.querySelector('.question-image-input');
+        if (fileInput) {
+            fileInput.value = '';
+        }
+        
+        console.log(`Image removed from question ${questionIndex + 1}`);
+    }
+} 

@@ -2,31 +2,16 @@
   "name": "NET Quiz",
   "short_name": "NET Quiz",
   "id": "com.hackerbmw.netquiz",
-  "description": "An interactive quiz application for testing knowledge with beautiful animations and a user-friendly interface.",
+  "description": "Study and test your knowledge with interactive quizzes",
   "lang": "en",
   "dir": "ltr",
-  "categories": ["education", "quiz", "games"],
+  "categories": ["education", "productivity"],
   "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
   "scope": "./",
   "scope_extensions": [
     {"origin": "https://hackerbmw.github.io/NET-QUIZ/"}
   ],
-  "screenshots": [
-    {
-      "src": "screenshots/screenshot1.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "platform": "wide",
-      "label": "Home Screen"
-    },
-    {
-      "src": "screenshots/screenshot2.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "platform": "wide",
-      "label": "Quiz Screen"
-    }
-  ],
+  "screenshots": [],
   "icons": [
     {
       "src": "icons/icon-192x192.png",
@@ -41,14 +26,23 @@
       "purpose": "any maskable"
     }
   ],
-  "start_url": "./index.html",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#FFFFFF",
+  "background_color": "#ffffff",
   "theme_color": "#FFB347",
   "orientation": "portrait",
   "launch_handler": {
     "client_mode": "auto"
   },
   "prefer_related_applications": false,
-  "related_applications": []
+  "related_applications": [],
+  "shortcuts": [
+    {
+      "name": "Start Quiz",
+      "short_name": "Quiz",
+      "description": "Start a new quiz",
+      "url": "/?startQuiz=true",
+      "icons": [{ "src": "icons/quiz-shortcut.png", "sizes": "192x192" }]
+    }
+  ]
 } 

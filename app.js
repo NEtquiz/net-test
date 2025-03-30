@@ -21,6 +21,227 @@ let registeredUsers = []; // To store registered users
 let userAnswers = [];
 let currentScore = 0;
 
+// Timer variables
+let quizTimerInterval;
+let quizTimeRemaining;
+
+// Check if the browser supports background sync
+function registerBackgroundSync() {
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+        navigator.serviceWorker.ready
+            .then(registration => {
+                // Register background sync
+                return registration.sync.register('sync-quizzes');
+            })
+            .then(() => {
+                console.log('Background sync registered!');
+            })
+            .catch(err => {
+                console.error('Background sync registration failed:', err);
+            });
+    } else {
+        console.log('Background sync not supported');
+    }
+}
+
+// Register for periodic sync (checks for updates regularly)
+function registerPeriodicSync() {
+    if ('serviceWorker' in navigator && 'periodicSync' in navigator.serviceWorker) {
+        navigator.serviceWorker.ready
+            .then(registration => {
+                // Check if periodic sync is available
+                return registration.periodicSync.getTags()
+                    .then(tags => {
+                        if (!tags.includes('update-content')) {
+                            // Register for content updates every 24 hours (minimum time is set by browser)
+                            return registration.periodicSync.register('update-content', {
+                                minInterval: 24 * 60 * 60 * 1000 // 24 hours
+                            });
+                        }
+                    });
+            })
+            .then(() => {
+                console.log('Periodic sync registered!');
+            })
+            .catch(err => {
+                console.error('Periodic sync registration failed:', err);
+            });
+    } else {
+        console.log('Periodic sync not supported');
+    }
+}
+
+// Request notification permission
+function requestNotificationPermission() {
+    if ('Notification' in window) {
+        Notification.requestPermission()
+            .then(permission => {
+                if (permission === 'granted') {
+                    console.log('Notification permission granted');
+                    subscribeToPushNotifications();
+                } else {
+                    console.log('Notification permission denied');
+                }
+            });
+    } else {
+        console.log('Notifications not supported');
+    }
+}
+
+// Subscribe to push notifications
+function subscribeToPushNotifications() {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+        let swRegistration;
+        navigator.serviceWorker.ready
+            .then(registration => {
+                swRegistration = registration;
+                return registration.pushManager.getSubscription();
+            })
+            .then(subscription => {
+                if (!subscription) {
+                    // Create a new subscription
+                    const applicationServerKey = urlBase64ToUint8Array(
+                        // Replace with your VAPID public key
+                        'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U'
+                    );
+                    
+                    return swRegistration.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: applicationServerKey
+                    });
+                }
+            })
+            .then(subscription => {
+                if (subscription) {
+                    // Send the subscription to your server
+                    console.log('User subscribed to push notifications');
+                    console.log(JSON.stringify(subscription));
+                    // In a real app, you would send this subscription to your server
+                    // sendSubscriptionToServer(subscription);
+                }
+            })
+            .catch(err => {
+                console.error('Failed to subscribe to push notifications:', err);
+            });
+    }
+}
+
+// Helper function to convert base64 to Uint8Array for VAPID key
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+    
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+// Enhanced localStorage saving with offline support
+function saveToLocalStorageWithSync(key, data) {
+    // Save to localStorage
+    localStorage.setItem(key, JSON.stringify(data));
+    
+    // If offline, queue for sync
+    if (!navigator.onLine && 'serviceWorker' in navigator && 'SyncManager' in window) {
+        // Add to sync queue
+        const dbPromise = indexedDB.open('net-quiz-sync', 1);
+        
+        dbPromise.onsuccess = event => {
+            const db = event.target.result;
+            const tx = db.transaction('requests', 'readwrite');
+            const store = tx.objectStore('requests');
+            
+            store.add({
+                url: '/api/saveData', // This would be your server endpoint
+                method: 'POST',
+                body: {
+                    key: key,
+                    data: data
+                },
+                timestamp: Date.now()
+            });
+            
+            tx.oncomplete = () => {
+                // Register for background sync
+                navigator.serviceWorker.ready
+                    .then(registration => {
+                        return registration.sync.register('sync-quizzes');
+                    });
+            };
+        };
+    }
+}
+
+// Function to handle online/offline events
+function setupOnlineOfflineHandlers() {
+    window.addEventListener('online', () => {
+        console.log('App is online');
+        document.body.classList.remove('offline');
+        
+        // Trigger sync when we come back online
+        if ('serviceWorker' in navigator && 'SyncManager' in window) {
+            navigator.serviceWorker.ready
+                .then(registration => {
+                    return registration.sync.register('sync-quizzes');
+                });
+        }
+        
+        // Show toast notification to user
+        showToast('You are back online!');
+    });
+    
+    window.addEventListener('offline', () => {
+        console.log('App is offline');
+        document.body.classList.add('offline');
+        
+        // Show toast notification to user
+        showToast('You are offline. Changes will be saved when you reconnect.');
+    });
+}
+
+// Simple toast notification function
+function showToast(message) {
+    // Create toast element if it doesn't exist
+    let toast = document.getElementById('toast-notification');
+    
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast-notification';
+        document.body.appendChild(toast);
+    }
+    
+    // Set message and show
+    toast.textContent = message;
+    toast.classList.add('show');
+    
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
+}
+
+// Initialize all offline functionality
+function initializeOfflineSupport() {
+    // Set initial online/offline status
+    if (!navigator.onLine) {
+        document.body.classList.add('offline');
+    }
+    
+    // Setup handlers
+    setupOnlineOfflineHandlers();
+    
+    // Register for capabilities
+    registerBackgroundSync();
+    registerPeriodicSync();
+    requestNotificationPermission();
+}
+
 // Function to handle navigation between screens
 function showScreen(screenId) {
     // Hide all screens
@@ -96,7 +317,7 @@ function loadQuizByCategory(category) {
     }
 }
 
-// Function to load current question
+// Function to load question with image size preferences
 function loadQuestion() {
     console.log("Loading question:", currentQuestionIndex);
     
@@ -120,31 +341,81 @@ function loadQuestion() {
     // Clear previous content
     quizContent.innerHTML = '';
     
-    // Create question element
-    const questionElement = document.createElement('p');
-    questionElement.className = 'quiz-question';
-    questionElement.textContent = currentQuestion.text;
-    quizContent.appendChild(questionElement);
-    
     // Add question counter
     const questionCounter = document.createElement('div');
     questionCounter.className = 'question-counter';
     questionCounter.textContent = `Question ${currentQuestionIndex + 1} of ${currentQuiz.questions.length}`;
-    quizContent.insertBefore(questionCounter, questionElement);
+    quizContent.appendChild(questionCounter);
+    
+    // Check if this is an STI/NAT category
+    const isSTINAT = currentQuiz.category && 
+        (currentQuiz.category.toLowerCase().includes("nat") || 
+         currentQuiz.category.toLowerCase().includes("sti"));
     
     // Add question image if available
     if (currentQuestion.image) {
-        const imageContainer = document.createElement('div');
-        imageContainer.className = 'question-image-container';
+        console.log("Question has image, displaying it");
         
+        // Create image container
+        const imageContainer = document.createElement('div');
+        
+        // Apply specialized CSS classes for STI/NAT images if applicable
+        if (isSTINAT) {
+            imageContainer.className = 'question-image-container sti-nat-container';
+            console.log("Applying STI/NAT optimized container");
+        } else {
+            imageContainer.className = 'question-image-container';
+            imageContainer.style.padding = '5px';
+            imageContainer.style.marginBottom = '25px';
+        }
+        
+        imageContainer.style.width = '100%';
+        
+        // Create the image element
         const image = document.createElement('img');
         image.src = currentQuestion.image;
-        image.className = 'question-image';
+        
+        // Apply specialized styles for STI/NAT
+        if (isSTINAT) {
+            image.className = 'question-image sti-nat-image';
+            console.log("Applying STI/NAT optimized image styles");
+        } else {
+            image.className = 'question-image';
+        }
+        
         image.alt = 'Question Image';
         
+        // Apply saved size preferences if available
+        if (currentQuestion.imageWidth && currentQuestion.imageHeight) {
+            console.log(`Applying saved image size: ${currentQuestion.imageWidth} x ${currentQuestion.imageHeight}`);
+            image.style.width = currentQuestion.imageWidth;
+            image.style.height = currentQuestion.imageHeight;
+        }
+        
+        // Add image to container first
         imageContainer.appendChild(image);
+        
+        // Add resizing functionality to the image
+        const resizableContainer = makeImageResizable(image, imageContainer);
+        
+        // Add the container to quiz content
         quizContent.appendChild(imageContainer);
+    } else {
+        console.log("Question has no image");
     }
+    
+    // Create question element (AFTER image for better flow)
+    const questionElement = document.createElement('p');
+    questionElement.className = 'quiz-question';
+    questionElement.textContent = currentQuestion.text;
+    
+    // Make question text smaller if this is STI/NAT to emphasize image
+    if (isSTINAT && currentQuestion.image) {
+        questionElement.style.fontSize = '16px';
+        questionElement.style.margin = '15px 0';
+    }
+    
+    quizContent.appendChild(questionElement);
     
     // Create options container
     const optionsContainer = document.createElement('div');
@@ -258,33 +529,34 @@ function handleNextQuestion() {
 
 // Function to submit answers and show results
 function submitAnswers() {
-    // Save current answers first
-    saveCurrentAnswers();
+    // Pause the timer when submitting answers
+    pauseQuizTimer();
     
     // Calculate score
-    calculateScore();
+    currentScore = 0;
+    
+    for (let i = 0; i < userAnswers.length; i++) {
+        if (userAnswers[i] === currentQuiz.questions[i].correct) {
+            currentScore++;
+        }
+    }
+    
+    // Update score display on results screen
+    document.querySelector('.score-value').textContent = currentScore;
+    document.querySelector('.total-questions').textContent = currentQuiz.questions.length;
+    
+    // Update user statistics
+    updateUserStatistics(currentScore, currentQuiz.questions.length);
     
     // Show results screen
     showQuizResults();
 }
 
-// Function to calculate the score
-function calculateScore() {
-    currentScore = 0;
-    
-    userAnswers.forEach((selectedOptions, index) => {
-        const question = currentQuiz.questions[index];
-        
-        // Check if arrays are equal (regardless of order)
-        if (selectedOptions.length === question.correctAnswers.length &&
-            selectedOptions.every(option => question.correctAnswers.includes(option))) {
-            currentScore++;
-        }
-    });
-}
-
 // Function to show the quiz results
 function showQuizResults() {
+    // Stop the timer when showing results
+    pauseQuizTimer();
+    
     // Show results screen
     showScreen('results-screen');
     
@@ -626,8 +898,25 @@ function createQuiz(event) {
         
         // Add question image if available
         const imagePreview = questionElement.querySelector('.question-image-preview');
-        if (imagePreview && imagePreview.src && !imagePreview.src.endsWith('placeholder.png')) {
-            questionObj.image = imagePreview.src;
+        if (imagePreview && imagePreview.src && 
+            imagePreview.style.display !== 'none' && 
+            !imagePreview.src.endsWith('placeholder.png')) {
+            console.log(`Adding image for question ${index + 1}`);
+            
+            // Store the image size preferences if available
+            const resizableContainer = imagePreview.closest('.resizable-image-container');
+            if (resizableContainer) {
+                const width = imagePreview.style.width;
+                const height = imagePreview.style.height;
+                
+                questionObj.image = imagePreview.src;
+                questionObj.imageWidth = width || '100%';
+                questionObj.imageHeight = height || 'auto';
+                
+                console.log(`Image size preferences saved: ${width} x ${height}`);
+            } else {
+                questionObj.image = imagePreview.src;
+            }
         }
         
         // Add to questions array
@@ -641,10 +930,26 @@ function createQuiz(event) {
     const category = "My Quizzes";
     
     // Get time limit
-    const timeLimit = parseInt(document.getElementById('time-limit').value) || 60;
+    const timeInput = document.getElementById('time-limit');
+    let timeLimit = 60; // Default to 60 minutes
+    
+    if (timeInput && timeInput.value) {
+        timeLimit = parseInt(timeInput.value);
+        // Validate time limit (minimum 1 minute, maximum 180 minutes)
+        if (isNaN(timeLimit) || timeLimit < 1) {
+            timeLimit = 1; // Minimum 1 minute
+        } else if (timeLimit > 180) {
+            timeLimit = 180; // Maximum 3 hours
+        }
+    } else if (document.getElementById('quiz-time') && document.getElementById('quiz-time').value) {
+        // Fallback to quiz-time input if exists (backward compatibility)
+        timeLimit = parseInt(document.getElementById('quiz-time').value);
+    }
+    
+    console.log("Setting quiz time limit to:", timeLimit, "minutes");
     
     // Get visibility
-    const isPublic = document.getElementById('quiz-visibility').checked;
+    const isPublic = document.getElementById('quiz-visibility').value === 'Public' ? true : false;
     
     // Create quiz object
     const quiz = {
@@ -659,19 +964,25 @@ function createQuiz(event) {
         createdBy: getCurrentUser() || 'anonymous'
     };
     
-    // Save to localStorage
+    // Use offline-aware storage method
     const userQuizzes = JSON.parse(localStorage.getItem('userQuizzes')) || [];
     userQuizzes.push(quiz);
-    localStorage.setItem('userQuizzes', JSON.stringify(userQuizzes));
+    
+    // Use the enhanced storage method that supports offline sync
+    saveToLocalStorageWithSync('userQuizzes', userQuizzes);
+    
+    // Show appropriate message based on connection status
+    if (navigator.onLine) {
+        alert('Quiz created successfully!');
+    } else {
+        alert('Quiz saved locally. It will sync when you are back online.');
+    }
     
     // Update user stats
     updateUserStats('quizzesCreated');
     
     // Reset form
     document.getElementById('create-quiz-form').reset();
-    
-    // Show success message
-    alert('Quiz created successfully!');
     
     // Go back to categories screen and show the new quiz
     showScreen('categories-screen');
@@ -682,7 +993,7 @@ function createQuiz(event) {
 function resetQuizCreationForm() {
     document.getElementById('quiz-title').value = '';
     document.getElementById('quiz-description').value = '';
-    document.getElementById('quiz-time').value = '10';
+    document.getElementById('time-limit').value = '10';
     document.getElementById('quiz-visibility').value = 'Public';
     
     // Reset questions (keep only one)
@@ -731,63 +1042,107 @@ function updateQuestionCounter() {
     }
 }
 
-// Function to handle question image preview
+// Function to preview question image
 function previewQuestionImage(input, questionIndex) {
-    const file = input.files[0];
-    if (file) {
-        // Validate file type
-        if (!file.type.match('image.*')) {
-            alert('Please select an image file');
-            return;
-        }
-        
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            alert('Image size should be less than 5MB');
-            return;
-        }
-        
+    if (input.files && input.files[0]) {
         const reader = new FileReader();
         
         reader.onload = function(e) {
-            // Store image data
-            questionImages[questionIndex] = {
-                data: e.target.result,
-                name: file.name,
-                type: file.type
-            };
+            // Get the question element
+            const questionElement = document.querySelectorAll('.question-item')[questionIndex];
             
-            // Update preview
-            const questionItem = document.querySelectorAll('.question-item')[questionIndex];
-            const preview = questionItem.querySelector('.question-image-preview');
-            const removeBtn = questionItem.querySelector('.remove-image-btn');
+            // Find the image preview element
+            const preview = questionElement.querySelector('.question-image-preview');
+            const removeBtn = questionElement.querySelector('.remove-image-btn');
+            const previewArea = questionElement.querySelector('.image-preview-area');
             
-            preview.src = e.target.result;
-            preview.style.display = 'block';
-            removeBtn.style.display = 'block';
+            if (preview && removeBtn && previewArea) {
+                // Clear existing content and reset styles
+                previewArea.innerHTML = '';
+                
+                // Remove any existing size controls
+                const existingControls = questionElement.querySelector('.image-size-controls');
+                if (existingControls) {
+                    existingControls.remove();
+                }
+                
+                // Make preview area more prominent
+                previewArea.style.display = 'flex';
+                previewArea.style.flexDirection = 'column';
+                previewArea.style.alignItems = 'center';
+                previewArea.style.minHeight = '350px';
+                previewArea.style.padding = '15px';
+                previewArea.style.backgroundColor = '#f9f9f9';
+                previewArea.style.borderRadius = '8px';
+                previewArea.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+                previewArea.style.marginBottom = '25px';
+                
+                // Create a new image element
+                const newImage = document.createElement('img');
+                newImage.className = 'question-image-preview';
+                newImage.src = e.target.result;
+                newImage.style.display = 'block';
+                newImage.style.maxWidth = '100%';
+                newImage.style.objectFit = 'contain';
+                
+                // Add image to preview area
+                previewArea.appendChild(newImage);
+                
+                // Apply resize functionality
+                makeImageResizable(newImage, previewArea);
+                
+                // Show the remove button
+                removeBtn.style.display = 'inline-block';
+                
+                // Save image data
+                const img = new Image();
+                img.onload = function() {
+                    // Store the image dimensions and data
+                    questionElement.dataset.imageWidth = this.width;
+                    questionElement.dataset.imageHeight = this.height;
+                    questionElement.dataset.imageData = e.target.result;
+                    
+                    console.log(`Image preview set for question ${questionIndex + 1} with resizing controls`);
+                };
+                img.src = e.target.result;
+            } else {
+                console.error('Could not find preview elements');
+            }
         };
         
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(input.files[0]);
     }
 }
 
-// Function to remove question image
+// Function to remove a question image
 function removeQuestionImage(questionIndex) {
-    // Remove image data
-    if (questionImages[questionIndex]) {
-        delete questionImages[questionIndex];
+    // Get the question element
+    const questionElement = document.querySelectorAll('.question-item')[questionIndex];
+    
+    // Find the image preview element
+    const preview = questionElement.querySelector('.question-image-preview');
+    const removeBtn = questionElement.querySelector('.remove-image-btn');
+    const previewArea = questionElement.querySelector('.image-preview-area');
+    
+    if (preview && removeBtn) {
+        // Clear and hide the image
+        preview.src = '';
+        preview.style.display = 'none';
+        if (previewArea) previewArea.style.display = 'none';
+        removeBtn.style.display = 'none';
+        
+        // Also clear the file input
+        const fileInput = questionElement.querySelector('.question-image-input');
+        if (fileInput) {
+            fileInput.value = '';
+        }
+        
+        // Reset any custom styles
+        preview.style.maxWidth = '';
+        preview.style.maxHeight = '';
+        
+        console.log(`Image removed from question ${questionIndex + 1}`);
     }
-    
-    // Update UI
-    const questionItem = document.querySelectorAll('.question-item')[questionIndex];
-    const preview = questionItem.querySelector('.question-image-preview');
-    const removeBtn = questionItem.querySelector('.remove-image-btn');
-    const fileInput = questionItem.querySelector('.question-image-input');
-    
-    preview.src = '';
-    preview.style.display = 'none';
-    removeBtn.style.display = 'none';
-    fileInput.value = ''; // Reset file input
 }
 
 // Function to handle login
@@ -938,21 +1293,417 @@ function handleSignup() {
         return;
     }
     
-    // Add the new user to the registered users
-    users.push({ email, password });
+    // Generate verification code
+    const verificationCode = generateVerificationCode();
+    
+    // Store signup data temporarily
+    const pendingSignup = {
+        email: email,
+        password: password,
+        verificationCode: verificationCode,
+        expiresAt: Date.now() + (30 * 60 * 1000) // 30 minutes expiry
+    };
+    
+    // Save pending signup
+    localStorage.setItem('pendingSignup', JSON.stringify(pendingSignup));
+    
+    // Show verification screen
+    showVerificationScreen(email, verificationCode);
+}
+
+// Function to generate a random 6-digit verification code
+function generateVerificationCode() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Function to send verification code via Netlify function
+function sendVerificationCode(method, email, phone, code) {
+    // Show loading indicator
+    showToast(`Sending verification code...`, 2000);
+    
+    // Call the Netlify function
+    fetch('/.netlify/functions/send-verification', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            method: method,
+            email: email,
+            phone: phone,
+            code: code
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message, 3000);
+            // For development, show the code
+            if (data.debug) {
+                setTimeout(() => {
+                    showToast(data.debug, 5000);
+                }, 3100);
+            }
+        } else {
+            showVerificationError(data.message || 'Failed to send verification code');
+        }
+    })
+    .catch(error => {
+        console.error('Error sending verification code:', error);
+        showVerificationError('Could not send verification code. Please try again.');
+        
+        // For development, show the code anyway
+        showToast(`Code: ${code}`, 5000);
+    });
+}
+
+// Function to show verification screen
+function showVerificationScreen(email, code) {
+    // Create verification screen if it doesn't exist
+    let verificationScreen = document.getElementById('verification-screen');
+    
+    if (!verificationScreen) {
+        verificationScreen = document.createElement('div');
+        verificationScreen.id = 'verification-screen';
+        verificationScreen.className = 'screen';
+        verificationScreen.innerHTML = `
+            <div class="screen-header">
+                <h1>Verify Account</h1>
+            </div>
+            <div class="auth-content">
+                <div class="verify-tabs">
+                    <button id="email-tab" class="verify-tab active">Email</button>
+                    <button id="sms-tab" class="verify-tab">SMS</button>
+                </div>
+                
+                <div id="email-verify" class="verify-method active">
+                    <p class="verification-message">Enter the code sent to:</p>
+                    <p class="verification-email"></p>
+                </div>
+                
+                <div id="sms-verify" class="verify-method">
+                    <div class="form-group sms-input-group">
+                        <input type="tel" id="phone-number" placeholder="Phone number" class="sms-input">
+                        <button id="send-sms-btn" class="sms-button">Send</button>
+                    </div>
+                </div>
+                
+                <div class="verification-code-container">
+                    <input type="text" maxlength="1" class="verification-digit" pattern="[0-9]" inputmode="numeric">
+                    <input type="text" maxlength="1" class="verification-digit" pattern="[0-9]" inputmode="numeric">
+                    <input type="text" maxlength="1" class="verification-digit" pattern="[0-9]" inputmode="numeric">
+                    <input type="text" maxlength="1" class="verification-digit" pattern="[0-9]" inputmode="numeric">
+                    <input type="text" maxlength="1" class="verification-digit" pattern="[0-9]" inputmode="numeric">
+                    <input type="text" maxlength="1" class="verification-digit" pattern="[0-9]" inputmode="numeric">
+                </div>
+                
+                <div id="verification-error" class="auth-error" style="display: none;"></div>
+                
+                <button id="verify-code-btn" class="primary-button">Verify</button>
+                
+                <div class="auth-links">
+                    <a href="#" id="resend-code">Resend Code</a>
+                    <a href="#" id="change-email">Back</a>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(verificationScreen);
+        
+        // Setup handlers for the verification screen
+        setupVerificationInputHandlers();
+        
+        // Verify button
+        const verifyBtn = document.getElementById('verify-code-btn');
+        if (verifyBtn) {
+            verifyBtn.addEventListener('click', validateVerificationCode);
+        }
+        
+        // Resend code link
+        const resendLink = document.getElementById('resend-code');
+        if (resendLink) {
+            resendLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Check if SMS tab is active
+                const smsActive = document.getElementById('sms-tab').classList.contains('active');
+                if (smsActive) {
+                    // Resend SMS
+                    const phoneInput = document.getElementById('phone-number');
+                    if (phoneInput && phoneInput.value.trim()) {
+                        const newCode = generateVerificationCode();
+                        sendVerificationCode('sms', null, phoneInput.value.trim(), newCode);
+                        
+                        // Update pending signup with new code
+                        updateVerificationCode(newCode);
+                    } else {
+                        showVerificationError('Please enter a phone number first');
+                    }
+                } else {
+                    // Resend email
+                    resendVerificationCode();
+                }
+            });
+        }
+        
+        // Change email link
+        const changeLink = document.getElementById('change-email');
+        if (changeLink) {
+            changeLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                showScreen('auth-screen');
+                toggleAuthForms('signup');
+            });
+        }
+        
+        // Tab switching
+        const emailTab = document.getElementById('email-tab');
+        const smsTab = document.getElementById('sms-tab');
+        if (emailTab && smsTab) {
+            emailTab.addEventListener('click', function() {
+                document.getElementById('email-tab').classList.add('active');
+                document.getElementById('sms-tab').classList.remove('active');
+                document.getElementById('email-verify').classList.add('active');
+                document.getElementById('sms-verify').classList.remove('active');
+            });
+            
+            smsTab.addEventListener('click', function() {
+                document.getElementById('sms-tab').classList.add('active');
+                document.getElementById('email-tab').classList.remove('active');
+                document.getElementById('sms-verify').classList.add('active');
+                document.getElementById('email-verify').classList.remove('active');
+            });
+        }
+        
+        // SMS send button
+        const sendSmsBtn = document.getElementById('send-sms-btn');
+        if (sendSmsBtn) {
+            sendSmsBtn.addEventListener('click', function() {
+                const phoneInput = document.getElementById('phone-number');
+                if (phoneInput && phoneInput.value.trim()) {
+                    const pendingSignup = JSON.parse(localStorage.getItem('pendingSignup'));
+                    if (pendingSignup) {
+                        sendVerificationCode('sms', null, phoneInput.value.trim(), pendingSignup.verificationCode);
+                    } else {
+                        showVerificationError('Session expired. Please try signing up again.');
+                    }
+                } else {
+                    showVerificationError('Please enter a valid phone number');
+                }
+            });
+        }
+    }
+    
+    // Update email display
+    const emailDisplay = verificationScreen.querySelector('.verification-email');
+    if (emailDisplay) {
+        emailDisplay.textContent = email;
+    }
+    
+    // Clear verification inputs
+    const inputs = verificationScreen.querySelectorAll('.verification-digit');
+    inputs.forEach(input => {
+        input.value = '';
+    });
+    
+    // Hide error message if any
+    const errorElement = document.getElementById('verification-error');
+    if (errorElement) {
+        errorElement.style.display = 'none';
+    }
+    
+    // Show verification screen
+    showScreen('verification-screen');
+    
+    // Send verification code via email through Netlify function
+    sendVerificationCode('email', email, null, code);
+    
+    // Focus on first input
+    if (inputs.length > 0) {
+        setTimeout(() => {
+            inputs[0].focus();
+        }, 300);
+    }
+}
+
+// Setup input handlers for verification code
+function setupVerificationInputHandlers() {
+    const inputs = document.querySelectorAll('.verification-digit');
+    
+    inputs.forEach((input, index) => {
+        // Handle input
+        input.addEventListener('input', function(e) {
+            // Ensure it's a number
+            const value = e.target.value;
+            if (!/^[0-9]$/.test(value)) {
+                e.target.value = '';
+                return;
+            }
+            
+            // Move to next input if available
+            if (index < inputs.length - 1 && value) {
+                inputs[index + 1].focus();
+            }
+            
+            // Check if all inputs are filled
+            if (Array.from(inputs).every(input => input.value)) {
+                validateVerificationCode();
+            }
+        });
+        
+        // Handle keypresses
+        input.addEventListener('keydown', function(e) {
+            // Move to previous input on backspace if current is empty
+            if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                inputs[index - 1].focus();
+            }
+        });
+        
+        // Handle paste
+        input.addEventListener('paste', function(e) {
+            e.preventDefault();
+            const pastedData = e.clipboardData.getData('text');
+            
+            // If pasted data is a 6-digit number, fill all inputs
+            if (/^\d{6}$/.test(pastedData)) {
+                inputs.forEach((input, i) => {
+                    input.value = pastedData[i];
+                });
+                
+                // Validate code after filling
+                validateVerificationCode();
+            }
+        });
+    });
+}
+
+// Function to validate verification code
+function validateVerificationCode() {
+    // Get entered code
+    const inputs = document.querySelectorAll('.verification-digit');
+    const enteredCode = Array.from(inputs).map(input => input.value).join('');
+    
+    // Get pending signup info
+    const pendingSignup = JSON.parse(localStorage.getItem('pendingSignup'));
+    
+    if (!pendingSignup) {
+        showVerificationError('Session expired. Please try signing up again.');
+        return;
+    }
+    
+    // Check if verification code has expired
+    if (Date.now() > pendingSignup.expiresAt) {
+        showVerificationError('Verification code has expired. Please request a new one.');
+        return;
+    }
+    
+    // Check if code matches
+    if (enteredCode === pendingSignup.verificationCode) {
+        // Complete registration
+        completeRegistration(pendingSignup);
+    } else {
+        showVerificationError('Invalid verification code. Please try again.');
+    }
+}
+
+// Function to show verification error
+function showVerificationError(message) {
+    const errorElement = document.getElementById('verification-error');
+    if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+    }
+}
+
+// Function to complete registration after verification
+function completeRegistration(pendingSignup) {
+    // Get existing users
+    const users = JSON.parse(localStorage.getItem('registeredUsers')) || [];
+    
+    // Add the new user
+    users.push({ 
+        email: pendingSignup.email, 
+        password: pendingSignup.password,
+        verified: true,
+        registeredAt: Date.now()
+    });
+    
+    // Update localStorage
     localStorage.setItem('registeredUsers', JSON.stringify(users));
     
-    // For demo purposes, any signup works
-    // In a real app, you would send to backend
-    showScreen('categories-screen');
-    
-    // Save signup info to localStorage
-    localStorage.setItem('user_email', email);
+    // Clear pending signup
+    localStorage.removeItem('pendingSignup');
     
     // Create default profile
-    userProfile.name = email.split('@')[0]; // Use part before @ as name
-    userProfile.username = email.split('@')[0];
+    userProfile.name = pendingSignup.email.split('@')[0]; // Use part before @ as name
+    userProfile.username = pendingSignup.email.split('@')[0];
     localStorage.setItem('userProfile', JSON.stringify(userProfile));
+    
+    // Save login info to localStorage
+    localStorage.setItem('user_email', pendingSignup.email);
+    
+    // Show success animation
+    showRegistrationSuccess();
+}
+
+// Function to show registration success
+function showRegistrationSuccess() {
+    // Create success overlay
+    let successOverlay = document.createElement('div');
+    successOverlay.className = 'registration-success-overlay';
+    successOverlay.style.position = 'fixed';
+    successOverlay.style.top = '0';
+    successOverlay.style.left = '0';
+    successOverlay.style.width = '100%';
+    successOverlay.style.height = '100%';
+    successOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    successOverlay.style.display = 'flex';
+    successOverlay.style.flexDirection = 'column';
+    successOverlay.style.alignItems = 'center';
+    successOverlay.style.justifyContent = 'center';
+    successOverlay.style.zIndex = '9999';
+    
+    successOverlay.innerHTML = `
+        <div style="background-color: white; border-radius: 15px; padding: 30px; max-width: 80%; display: flex; flex-direction: column; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+            <div style="width: 80px; height: 80px; border-radius: 50%; background-color: #4CAF50; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                <span style="color: white; font-size: 40px;">✓</span>
+            </div>
+            <h2 style="color: #333; margin-bottom: 15px; font-size: 24px;">Registration Complete!</h2>
+            <p style="color: #666; margin-bottom: 25px; text-align: center; font-size: 16px;">Your account has been successfully created.<br>Welcome to NET Quiz!</p>
+        </div>
+    `;
+    
+    document.body.appendChild(successOverlay);
+    
+    // Redirect to categories screen after showing success
+    setTimeout(() => {
+        document.body.removeChild(successOverlay);
+        showScreen('categories-screen');
+    }, 2500);
+}
+
+// Function to resend verification code
+function resendVerificationCode() {
+    // Get pending signup
+    const pendingSignup = JSON.parse(localStorage.getItem('pendingSignup'));
+    
+    if (!pendingSignup) {
+        showVerificationError('Session expired. Please try signing up again.');
+        return;
+    }
+    
+    // Generate new verification code
+    const newCode = generateVerificationCode();
+    
+    // Update pending signup
+    pendingSignup.verificationCode = newCode;
+    pendingSignup.expiresAt = Date.now() + (30 * 60 * 1000); // Reset 30-minute expiry
+    
+    // Save updated pending signup
+    localStorage.setItem('pendingSignup', JSON.stringify(pendingSignup));
+    
+    // Send the new code via email using the Netlify function
+    sendVerificationCode('email', pendingSignup.email, null, newCode);
 }
 
 // Function to show validation error
@@ -999,71 +1750,347 @@ function validateEmail(email) {
 
 // Function to handle Google login
 function handleGoogleLogin() {
-    // In a real implementation, this would use the Google OAuth API
-    // For this demo, we'll simulate a successful Google login
-    const randomEmail = `user${Math.floor(Math.random() * 1000)}@gmail.com`;
-    const randomName = `Google User ${Math.floor(Math.random() * 1000)}`;
+    console.log("Initiating Google login...");
     
-    // Register user if not already registered
-    registerSocialUser(randomEmail, randomName, 'google');
+    // Create a loading overlay to simulate page redirect
+    showLoginRedirectOverlay('google');
     
-    // Log the user in
-    loginSocialUser(randomEmail, 'google');
+    // Generate fake user data for demo
+    const randomNum = Math.floor(Math.random() * 1000);
+    const email = `user${randomNum}@gmail.com`;
+    const name = `Google User ${randomNum}`;
+    
+    // Simulate delay and redirect
+    setTimeout(() => {
+        // Remove loading overlay
+        hideLoginRedirectOverlay();
+        
+        // Process the login
+        registerSocialUser(email, name, 'google');
+        loginSocialUser(email, 'google', name);
+        
+        console.log(`Google login completed for ${email}`);
+    }, 1500); // 1.5 second delay to simulate network request
 }
 
 // Function to handle Facebook login
 function handleFacebookLogin() {
-    // In a real implementation, this would use the Facebook Login API
-    // For this demo, we'll simulate a successful Facebook login
-    const randomEmail = `user${Math.floor(Math.random() * 1000)}@facebook.com`;
-    const randomName = `Facebook User ${Math.floor(Math.random() * 1000)}`;
+    console.log("Initiating Facebook login...");
     
-    // Register user if not already registered
-    registerSocialUser(randomEmail, randomName, 'facebook');
+    // Create a loading overlay to simulate page redirect
+    showLoginRedirectOverlay('facebook');
     
-    // Log the user in
-    loginSocialUser(randomEmail, 'facebook');
+    // Generate fake user data for demo
+    const randomNum = Math.floor(Math.random() * 1000);
+    const email = `user${randomNum}@facebook.com`;
+    const name = `Facebook User ${randomNum}`;
+    
+    // Simulate delay and redirect
+    setTimeout(() => {
+        // Remove loading overlay
+        hideLoginRedirectOverlay();
+        
+        // Process the login
+        registerSocialUser(email, name, 'facebook');
+        loginSocialUser(email, 'facebook', name);
+        
+        console.log(`Facebook login completed for ${email}`);
+    }, 1500); // 1.5 second delay to simulate network request
+}
+
+// Function to show login redirect overlay
+function showLoginRedirectOverlay(provider) {
+    // Create a loading overlay
+    let loadingOverlay = document.getElementById('login-redirect-overlay');
+    
+    if (!loadingOverlay) {
+        loadingOverlay = document.createElement('div');
+        loadingOverlay.id = 'login-redirect-overlay';
+        loadingOverlay.style.position = 'fixed';
+        loadingOverlay.style.top = '0';
+        loadingOverlay.style.left = '0';
+        loadingOverlay.style.width = '100%';
+        loadingOverlay.style.height = '100%';
+        loadingOverlay.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+        loadingOverlay.style.display = 'flex';
+        loadingOverlay.style.flexDirection = 'column';
+        loadingOverlay.style.justifyContent = 'center';
+        loadingOverlay.style.alignItems = 'center';
+        loadingOverlay.style.zIndex = '9999';
+        
+        // Add spinner
+        const spinner = document.createElement('div');
+        spinner.className = 'login-spinner';
+        spinner.style.width = '50px';
+        spinner.style.height = '50px';
+        spinner.style.border = '5px solid #f3f3f3';
+        spinner.style.borderTop = `5px solid ${provider === 'facebook' ? '#3b5998' : '#DB4437'}`;
+        spinner.style.borderRadius = '50%';
+        spinner.style.animation = 'spin 1s linear infinite';
+        loadingOverlay.appendChild(spinner);
+        
+        // Add text
+        const statusText = document.createElement('div');
+        statusText.style.marginTop = '20px';
+        statusText.style.fontSize = '16px';
+        statusText.textContent = `Connecting to ${provider.charAt(0).toUpperCase() + provider.slice(1)}...`;
+        loadingOverlay.appendChild(statusText);
+        
+        // Add CSS animation
+        if (!document.getElementById('spinner-animation')) {
+            const style = document.createElement('style');
+            style.id = 'spinner-animation';
+            style.textContent = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`;
+            document.head.appendChild(style);
+        }
+        
+        // Add to document
+        document.body.appendChild(loadingOverlay);
+    }
+}
+
+// Function to hide login redirect overlay
+function hideLoginRedirectOverlay() {
+    const overlay = document.getElementById('login-redirect-overlay');
+    if (overlay) {
+        document.body.removeChild(overlay);
+    }
 }
 
 // Helper function to register a social media user
 function registerSocialUser(email, name, provider) {
-    // Get existing users
-    const users = JSON.parse(localStorage.getItem('registeredUsers')) || [];
+    console.log(`Registering social user: ${email} with ${provider}`);
     
-    // Check if user already exists
-    if (!users.some(user => user.email === email)) {
-        // Add the new user with social provider info
-        users.push({ 
-            email: email, 
-            password: null, // No password for social logins
-            name: name,
-            provider: provider,
-            socialLogin: true
-        });
-        localStorage.setItem('registeredUsers', JSON.stringify(users));
-        
-        // Create default profile
-        userProfile.name = name;
-        userProfile.username = name.replace(/\s+/g, '').toLowerCase();
-        localStorage.setItem('userProfile', JSON.stringify(userProfile));
-    }
+    // Create a new user object with social connection
+    const newUser = {
+        email: email,
+        name: name || email.split('@')[0],
+        passwordHash: null, // Social users don't have passwords
+        profileImage: null,
+        bio: '',
+        interests: [],
+        dateCreated: Date.now(),
+        lastLogin: Date.now(),
+        socialConnections: {
+            [provider]: {
+                connected: true,
+                email: email
+            }
+        },
+        statistics: {
+            quizzesCreated: 0,
+            quizzesTaken: 0,
+            correctAnswers: 0,
+            totalQuestions: 0,
+            logins: 1
+        }
+    };
+    
+    // Get existing users
+    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    
+    // Add new user
+    users.push(newUser);
+    
+    // Save updated users array
+    localStorage.setItem('users', JSON.stringify(users));
+    
+    // Set current user
+    localStorage.setItem('currentUser', email);
+    
+    // Show success overlay
+    showAuthSuccessOverlay(provider, name || email);
+    
+    // After success overlay, navigate to categories screen
+    setTimeout(() => {
+        hideAuthSuccessOverlay();
+        showScreen('categories-screen');
+    }, 2000);
 }
 
 // Helper function to login a social media user
-function loginSocialUser(email, provider) {
-    // Hide any error messages or notifications
-    const notification = document.getElementById('login-notification');
-    if (notification) {
-        notification.style.display = 'none';
+function loginSocialUser(email, provider, name) {
+    // Check if user exists in localStorage
+    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    const userExists = users.some(user => user.email === email);
+    
+    if (userExists) {
+        // Update the user's social connection information
+        const updatedUsers = users.map(user => {
+            if (user.email === email) {
+                // Update the connection status for this provider
+                if (!user.socialConnections) {
+                    user.socialConnections = {};
+                }
+                user.socialConnections[provider] = {
+                    connected: true,
+                    email: email
+                };
+                
+                // Set last login time
+                user.lastLogin = Date.now();
+            }
+            return user;
+        });
+        localStorage.setItem('users', JSON.stringify(updatedUsers));
+        
+        // Set current user in localStorage
+        localStorage.setItem('currentUser', email);
+        
+        // Show success overlay
+        showAuthSuccessOverlay(provider, name);
+        
+        // Update user statistics
+        updateUserStats('logins');
+    } else {
+        // If user doesn't exist yet, register them
+        registerSocialUser(email, name, provider);
     }
     
-    // Navigate to the main app
-    showScreen('categories-screen');
+    // Auto-connect to personal account if exists and not already connected
+    const personalAccounts = users.filter(user => 
+        user.email !== email && 
+        (!user.socialConnections || 
+         !user.socialConnections[provider] || 
+         !user.socialConnections[provider].connected)
+    );
     
-    // Save login info
-    localStorage.setItem('user_email', email);
-    localStorage.setItem('social_provider', provider);
-    localStorage.setItem('remember_me', 'true'); // Social logins are remembered by default
+    // If we have personal accounts that aren't connected yet
+    if (personalAccounts.length > 0) {
+        // Get the most recently used account
+        const mostRecentAccount = personalAccounts.sort((a, b) => 
+            (b.lastLogin || 0) - (a.lastLogin || 0)
+        )[0];
+        
+        console.log(`Auto-connecting ${provider} to personal account: ${mostRecentAccount.email}`);
+        
+        // Update the personal account with the social connection
+        updateUserSocialConnections(mostRecentAccount.email, provider, email);
+        
+        // Show toast notification about the connection
+        setTimeout(() => {
+            showToast(`Your ${provider} account has been connected to your personal account: ${mostRecentAccount.email}`);
+        }, 3000); // Show this after the success overlay
+    }
+}
+
+// Function to show authentication success overlay
+function showAuthSuccessOverlay(provider, name) {
+    // Create overlay if it doesn't exist
+    let overlay = document.getElementById('auth-success-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'auth-success-overlay';
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.zIndex = '1000';
+        overlay.style.color = 'white';
+        overlay.style.textAlign = 'center';
+        overlay.style.animation = 'fadeIn 0.5s ease-out';
+        document.body.appendChild(overlay);
+    } else {
+        overlay.style.display = 'flex';
+    }
+    
+    // Create content for the overlay
+    overlay.innerHTML = `
+        <div style="background-color: white; border-radius: 15px; padding: 30px; max-width: 80%; display: flex; flex-direction: column; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+            <div style="width: 70px; height: 70px; border-radius: 50%; background-color: #4CAF50; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                <span style="color: white; font-size: 40px;">✓</span>
+            </div>
+            <h2 style="color: #333; margin-bottom: 15px; font-size: 22px;">Login Successful</h2>
+            <p style="color: #666; margin-bottom: 15px; font-size: 16px;">Welcome ${name || 'back'}!</p>
+            <p style="color: #888; font-size: 14px;">Connected with ${provider}</p>
+        </div>
+    `;
+    
+    // After a short delay, automatically redirect
+    setTimeout(() => {
+        hideAuthSuccessOverlay();
+        showScreen('categories-screen');
+    }, 2000);
+}
+
+// Function to hide authentication success overlay
+function hideAuthSuccessOverlay() {
+    const overlay = document.getElementById('auth-success-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+
+// Function to update user statistics
+function updateUserStats(statName) {
+    // Get current user profile
+    const userProfile = JSON.parse(localStorage.getItem('userProfile')) || {
+        stats: {
+            quizzes: 0,
+            accuracy: '0%',
+            rank: 0,
+            quizzesCreated: 0
+        }
+    };
+    
+    // Update requested stat
+    if (statName === 'quizzesCreated') {
+        userProfile.stats.quizzesCreated = (userProfile.stats.quizzesCreated || 0) + 1;
+        userProfile.stats.quizzes = userProfile.stats.quizzesCreated;
+    }
+    
+    // Save back to localStorage
+    localStorage.setItem('userProfile', JSON.stringify(userProfile));
+}
+
+// Function to update user statistics
+function updateUserStatistics(score, totalQuestions) {
+    // Get user profile
+    const userProfile = JSON.parse(localStorage.getItem('userProfile')) || {
+        stats: {
+            quizzes: 0,
+            accuracy: '0%',
+            rank: 0,
+            quizzesCreated: 0,
+            totalAnswered: 0,
+            correctAnswers: 0
+        }
+    };
+    
+    // Update quiz count
+    userProfile.stats.quizzes++;
+    
+    // Update total questions and correct answers
+    userProfile.stats.totalAnswered = (userProfile.stats.totalAnswered || 0) + totalQuestions;
+    userProfile.stats.correctAnswers = (userProfile.stats.correctAnswers || 0) + score;
+    
+    // Calculate and update accuracy
+    if (userProfile.stats.totalAnswered > 0) {
+        const accuracyPercent = Math.round((userProfile.stats.correctAnswers / userProfile.stats.totalAnswered) * 100);
+        userProfile.stats.accuracy = accuracyPercent + '%';
+    }
+    
+    // Update rank based on correct answers
+    if (userProfile.stats.correctAnswers >= 500) {
+        userProfile.stats.rank = 'Expert';
+    } else if (userProfile.stats.correctAnswers >= 200) {
+        userProfile.stats.rank = 'Advanced';
+    } else if (userProfile.stats.correctAnswers >= 50) {
+        userProfile.stats.rank = 'Intermediate';
+    } else {
+        userProfile.stats.rank = 'Beginner';
+    }
+    
+    // Save back to localStorage
+    localStorage.setItem('userProfile', JSON.stringify(userProfile));
+    
+    console.log('User statistics updated:', userProfile.stats);
 }
 
 // Initialize the application when the DOM is fully loaded
@@ -1173,6 +2200,30 @@ document.addEventListener('DOMContentLoaded', function() {
         originalResetQuizCreationForm();
         updateCategoriesWithUserQuizzes();
     };
+    
+    // Initialize offline support
+    initializeOfflineSupport();
+    
+    // Replace your storage functions with offline-aware versions
+    // For example, use saveToLocalStorageWithSync instead of localStorage.setItem
+    // Example: when saving a quiz
+    
+    // Modify your existing createQuiz function to use the new storage method
+    if (typeof createQuiz === 'function') {
+        const originalCreateQuiz = createQuiz;
+        
+        createQuiz = function(event) {
+            // Call original function first
+            const result = originalCreateQuiz.apply(this, arguments);
+            
+            // Then trigger background sync if needed
+            if (!navigator.onLine) {
+                registerBackgroundSync();
+            }
+            
+            return result;
+        };
+    }
 });
 
 // Function to set up real-time validation for form inputs
@@ -1525,17 +2576,22 @@ function showMyQuizzesScreen() {
 function startQuizWithCustomQuestions(quiz) {
     console.log("Starting quiz:", quiz.title);
     console.log("Questions:", quiz.questions.length);
+    console.log("Time limit:", quiz.timeLimit || 30, "minutes");
     
-    // Set current quiz
+    // Set current quiz with time limit
     currentQuiz = {
         category: quiz.title,
-        questions: quiz.questions
+        questions: quiz.questions,
+        timeLimit: quiz.timeLimit || 30 // Default to 30 minutes if not specified
     };
     
     // Reset question index and answers
     currentQuestionIndex = 0;
     userAnswers = [];
     currentScore = 0;
+    
+    // Initialize the timer when starting a quiz
+    initializeQuizTimer(currentQuiz.timeLimit);
     
     // Show quiz screen first
     showScreen('quiz-screen');
@@ -1550,6 +2606,9 @@ function startQuizWithCustomQuestions(quiz) {
             // Load first question
             loadQuestion();
             console.log("Loaded first question");
+            
+            // Start the timer
+            startQuizTimer();
         } catch (error) {
             console.error("Error loading quiz:", error);
             alert("There was an error loading the quiz. Please try again.");
@@ -1583,4 +2642,136 @@ function updateUserStats(statName) {
     
     // Save back to localStorage
     localStorage.setItem('userProfile', JSON.stringify(userProfile));
+}
+
+// Function to initialize quiz timer
+function initializeQuizTimer(timeLimit) {
+    // Convert minutes to seconds
+    quizTimeRemaining = (timeLimit || 30) * 60;
+    
+    // Clear any existing timer
+    if (quizTimerInterval) {
+        clearInterval(quizTimerInterval);
+        quizTimerInterval = null;
+    }
+    
+    // Create or update timer display element
+    let timerElement = document.querySelector('.quiz-timer');
+    if (!timerElement) {
+        timerElement = document.createElement('div');
+        timerElement.className = 'quiz-timer';
+        
+        // Add to quiz screen header
+        const quizHeader = document.querySelector('#quiz-screen .header');
+        if (quizHeader) {
+            quizHeader.appendChild(timerElement);
+        }
+    }
+    
+    // Set initial timer display
+    updateTimerDisplay();
+}
+
+// Function to start quiz timer
+function startQuizTimer() {
+    if (quizTimerInterval) {
+        clearInterval(quizTimerInterval);
+    }
+    
+    quizTimerInterval = setInterval(() => {
+        if (quizTimeRemaining <= 0) {
+            // Time's up
+            clearInterval(quizTimerInterval);
+            handleTimeUp();
+        } else {
+            quizTimeRemaining--;
+            updateTimerDisplay();
+        }
+    }, 1000);
+}
+
+// Function to update timer display
+function updateTimerDisplay() {
+    const timerElement = document.querySelector('.quiz-timer');
+    if (timerElement) {
+        const minutes = Math.floor(quizTimeRemaining / 60);
+        const seconds = quizTimeRemaining % 60;
+        
+        // Format time as MM:SS
+        const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Update display
+        timerElement.textContent = formattedTime;
+        
+        // Add warning class if time is running out (less than 1 minute)
+        if (quizTimeRemaining < 60) {
+            timerElement.classList.add('time-warning');
+        } else {
+            timerElement.classList.remove('time-warning');
+        }
+    }
+}
+
+// Function to pause quiz timer
+function pauseQuizTimer() {
+    if (quizTimerInterval) {
+        clearInterval(quizTimerInterval);
+        quizTimerInterval = null;
+    }
+}
+
+// Function to handle time up
+function handleTimeUp() {
+    // Stop the timer
+    pauseQuizTimer();
+    
+    // Show alert
+    alert("Time's up! Your quiz will be submitted now.");
+    
+    // Submit answers and show results
+    submitAnswers();
+}
+
+// Function to update user statistics
+function updateUserStatistics(score, totalQuestions) {
+    // Get user profile
+    const userProfile = JSON.parse(localStorage.getItem('userProfile')) || {
+        stats: {
+            quizzes: 0,
+            accuracy: '0%',
+            rank: 0,
+            quizzesCreated: 0,
+            totalAnswered: 0,
+            correctAnswers: 0
+        }
+    };
+    
+    // Update quiz count
+    userProfile.stats.quizzes++;
+    
+    // Update total questions and correct answers
+    userProfile.stats.totalAnswered = (userProfile.stats.totalAnswered || 0) + totalQuestions;
+    userProfile.stats.correctAnswers = (userProfile.stats.correctAnswers || 0) + score;
+    
+    // Calculate and update accuracy
+    if (userProfile.stats.totalAnswered > 0) {
+        const accuracyPercent = Math.round((userProfile.stats.correctAnswers / userProfile.stats.totalAnswered) * 100);
+        userProfile.stats.accuracy = accuracyPercent + '%';
+    }
+    
+    // Update rank based on correct answers
+    if (userProfile.stats.correctAnswers >= 500) {
+        userProfile.stats.rank = 'Expert';
+    } else if (userProfile.stats.correctAnswers >= 200) {
+        userProfile.stats.rank = 'Advanced';
+    } else if (userProfile.stats.correctAnswers >= 50) {
+        userProfile.stats.rank = 'Intermediate';
+    } else {
+        userProfile.stats.rank = 'Beginner';
+    }
+    
+    // Save back to localStorage
+    localStorage.setItem('userProfile', JSON.stringify(userProfile));
+    
+    console.log('User statistics updated:', userProfile.stats);
 } 

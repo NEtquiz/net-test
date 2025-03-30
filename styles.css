@@ -140,7 +140,7 @@ body {
 
 .primary-button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 8px rgba(216, 36, 36, 0.1);
 }
 
 .secondary-button {
@@ -303,13 +303,14 @@ body {
 
 /* Quiz Screen */
 .quiz-content {
-    padding: 20px 0;
+    padding: 20px 10px;
 }
 
 .quiz-question {
-    font-size: 18px;
+    font-size: 20px;
     line-height: 1.5;
-    margin-bottom: 25px;
+    margin-bottom: 30px;
+    font-weight: 500;
 }
 
 /* Quiz Question Image */
@@ -328,20 +329,35 @@ body {
     object-fit: contain;
 }
 
+.question-counter {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
 .quiz-options {
-    margin-bottom: 25px;
+    margin-bottom: 30px;
 }
 
 .quiz-option {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 15px;
+    padding: 16px;
     border-bottom: 1px solid #eee;
+    transition: background-color 0.2s;
+}
+
+.quiz-option:hover {
+    background-color: #f9f9f9;
 }
 
 .quiz-option span {
-    font-size: 16px;
+    font-size: 17px;
+    line-height: 1.4;
+    flex: 1;
+    padding-right: 15px;
 }
 
 /* Toggle switch */
@@ -704,13 +720,6 @@ input:checked + .slider:before {
     font-size: 18px;
 }
 
-.question-counter {
-    font-size: 14px;
-    color: #888;
-    font-weight: normal;
-    margin-left: 10px;
-}
-
 .question-list {
     display: flex;
     flex-direction: column;
@@ -817,44 +826,70 @@ input[type="number"] {
 
 /* Question Image Upload */
 .question-image-container {
-    margin: 15px 0;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.image-preview-area {
-    width: 100%;
-    min-height: 40px;
+    margin: 15px 0 25px 0;
     display: flex;
     justify-content: center;
-    border-radius: 10px;
-    overflow: hidden;
+    width: 100%;
+    min-height: 300px;
+}
+
+.question-image {
+    width: 100%;
+    max-height: 600px; /* Extremely large */
+    border-radius: 8px;
+    object-fit: contain;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    image-rendering: auto;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-font-smoothing: subpixel-antialiased;
+}
+
+/* Image preview in question editor */
+.image-preview-area {
+    margin: 15px 0;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    min-height: 300px;
+    background-color: #f9f9f9;
+    padding: 15px;
+    border-radius: 8px;
+    transform: translateZ(0); /* Force GPU acceleration */
 }
 
 .question-image-preview {
-    max-width: 100%;
-    max-height: 200px;
+    width: 100%;
+    height: auto;
+    max-height: 550px; /* Extremely large */
+    border-radius: 6px;
     object-fit: contain;
-    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    image-rendering: auto;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-font-smoothing: subpixel-antialiased;
 }
 
 .image-upload-controls {
     display: flex;
-    align-items: center;
     gap: 10px;
+    justify-content: center;
+    margin-top: 10px;
 }
 
 .image-upload-label {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 5px;
-    background-color: #f5f5f5;
-    padding: 8px 15px;
-    border-radius: 20px;
+    background-color: #f1f1f1;
+    padding: 8px 12px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
-    color: #555;
     transition: background-color 0.2s;
 }
 
@@ -863,6 +898,7 @@ input[type="number"] {
 }
 
 .image-icon {
+    margin-right: 6px;
     font-size: 16px;
 }
 
@@ -1312,4 +1348,305 @@ input[type="number"] {
     padding: 40px 20px;
     color: #888;
     font-size: 16px;
-} 
+}
+
+/* Offline mode styling */
+body.offline {
+    --offline-indicator-height: 38px;
+    padding-top: var(--offline-indicator-height);
+    position: relative;
+}
+
+body.offline::before {
+    content: 'You are offline. Some features may be limited.';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--offline-indicator-height);
+    background-color: #f8d7da;
+    color: #721c24;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    font-size: 14px;
+    text-align: center;
+    padding: 0 15px;
+}
+
+/* Toast notifications */
+#toast-notification {
+    visibility: hidden;
+    min-width: 250px;
+    background-color: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    text-align: center;
+    border-radius: 8px;
+    padding: 16px;
+    position: fixed;
+    z-index: 1001;
+    left: 50%;
+    bottom: 30px;
+    transform: translateX(-50%);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    font-size: 14px;
+}
+
+#toast-notification.show {
+    visibility: visible;
+    animation: fadein 0.5s, fadeout 0.5s 2.5s;
+}
+
+@keyframes fadein {
+    from {bottom: 0; opacity: 0;}
+    to {bottom: 30px; opacity: 1;}
+}
+
+@keyframes fadeout {
+    from {bottom: 30px; opacity: 1;}
+    to {bottom: 0; opacity: 0;}
+}
+
+/* Quiz timer styles */
+.quiz-timer {
+    background-color: #f0f0f0;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #333;
+    position: absolute;
+    right: 15px;
+    top: 15px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.quiz-timer.time-warning {
+    background-color: #ff5252;
+    color: white;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Make sure quiz screen header has position relative */
+#quiz-screen .header {
+    position: relative;
+}
+
+/* STI/NAT specific styles */
+.sti-nat-image {
+    width: 100% !important;
+    max-height: 800px !important;
+    object-fit: contain !important;
+    image-rendering: -webkit-optimize-contrast !important;
+    image-rendering: crisp-edges !important;
+    transform: translateZ(0) !important;
+    will-change: transform !important;
+    backface-visibility: hidden !important;
+}
+
+.sti-nat-container {
+    background-color: #f0f0f0 !important;
+    padding: 20px !important;
+    margin: 15px 0 25px 0 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2) !important;
+    min-height: 500px !important;
+}
+
+/* Optimize container for STI/NAT questions */
+#quiz-screen .quiz-content {
+    padding-left: 5px;
+    padding-right: 5px;
+}
+
+/* Ensure Quiz content has enough space for large images */
+.quiz-content {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+/* Verification Screen Styles */
+.verification-message {
+    font-size: 13px;
+    line-height: 1.3;
+    text-align: center;
+    margin-bottom: 8px;
+    color: #555;
+}
+
+.verification-email {
+    font-weight: bold;
+    font-size: 14px;
+    text-align: center;
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.verification-code-container {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    max-width: 220px;
+    margin: 0 auto 15px;
+}
+
+.verification-digit {
+    width: 28px;
+    height: 34px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+    color: #333;
+    background-color: white;
+    transition: all 0.3s ease;
+}
+
+.verification-digit:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 1px rgba(0, 123, 255, 0.25);
+    outline: none;
+}
+
+#verification-error {
+    background-color: #ffebee;
+    color: #d32f2f;
+    padding: 8px;
+    border-radius: 4px;
+    text-align: center;
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+
+.auth-links {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 15px;
+}
+
+.auth-links a {
+    color: #007bff;
+    text-decoration: none;
+    font-size: 12px;
+    transition: color 0.2s;
+}
+
+/* Additional style for primary button on verification screen */
+#verification-screen .primary-button {
+    height: 38px;
+    font-size: 14px;
+    padding: 0 20px;
+}
+
+/* Verification Tabs */
+.verify-tabs {
+    display: flex;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+.verify-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 8px 5px;
+    font-size: 13px;
+    color: #777;
+    cursor: pointer;
+    position: relative;
+}
+
+.verify-tab.active {
+    color: #007bff;
+    font-weight: 500;
+}
+
+.verify-tab.active:after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background-color: #007bff;
+}
+
+.verify-method {
+    display: none;
+}
+
+.verify-method.active {
+    display: block;
+}
+
+/* SMS Verification */
+.sms-input-group {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 10px;
+}
+
+.sms-input {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 13px;
+}
+
+.sms-button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 0 12px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.sms-button:hover {
+    background-color: #0069d9;
+}
+
+/* Animation for registration success overlay */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.registration-success-overlay {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* Responsive styles for smaller screens */
+@media (max-width: 400px) {
+    .verification-digit {
+        width: 35px;
+        height: 45px;
+        font-size: 20px;
+    }
+    
+    .verification-code-container {
+        max-width: 280px;
+    }
+}

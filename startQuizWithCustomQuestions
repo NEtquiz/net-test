@@ -1,0 +1,43 @@
+// Function to start a quiz with custom questions
+function startQuizWithCustomQuestions(quiz) {
+    console.log("Starting quiz:", quiz.title);
+    console.log("Questions:", quiz.questions.length);
+    console.log("Time limit:", quiz.timeLimit || 30, "minutes");
+    
+    // Set current quiz with time limit
+    currentQuiz = {
+        category: quiz.title,
+        questions: quiz.questions,
+        timeLimit: quiz.timeLimit || 30 // Default to 30 minutes if not specified
+    };
+    
+    // Reset question index and answers
+    currentQuestionIndex = 0;
+    userAnswers = [];
+    currentScore = 0;
+    
+    // Initialize the timer when starting a quiz
+    initializeQuizTimer(currentQuiz.timeLimit);
+    
+    // Show quiz screen first
+    showScreen('quiz-screen');
+    
+    // Force redraw by small timeout
+    setTimeout(() => {
+        try {
+            // Try to get quiz content to check if it exists
+            const quizContent = document.querySelector('.quiz-content');
+            console.log("Quiz content found:", quizContent !== null);
+            
+            // Load first question
+            loadQuestion();
+            console.log("Loaded first question");
+            
+            // Start the timer
+            startQuizTimer();
+        } catch (error) {
+            console.error("Error loading quiz:", error);
+            alert("There was an error loading the quiz. Please try again.");
+        }
+    }, 100);
+} 
